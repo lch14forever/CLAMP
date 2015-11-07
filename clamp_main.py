@@ -8,10 +8,33 @@ import os
 import sys
 import argparse
 import libpylshbox
-import dtw
+import fastdtw
 from datetime import datetime
 from time import time
 from svmpy import svmutil as svm
+
+def parse_svm_parms(parms):
+    parm_list = parms.split(',')
+    parm_parsed = []
+    for i in parm_list:
+        p = i.split(':')
+        p[0] = '-'+p[0]
+        parm_parsed.extend(p)
+    return ' '.join(parm_parsed)
+
+def dtw_dist_mat(dat):
+    length = len(dat)
+    dtw_distances = [[0 for x in xrange(length)] for x in xrange(length)]
+    sys.stderr.write('Precomputing DTW distance matrix [%dx%d] for training set...\n' %(length, length))
+    for i in xrange(length):
+        sys.stderr.write('\r')
+        sys.stderr.write("[%-50s] %d%%" % ('='*(50*(i+1)/length), (i+1)*100*1.0/length))
+        sys.stderr.flush()
+
+        for j in xrange(i+1,length):
+            dist = (fastdtw.fastdtw(dat[i], dat[j]))[0]
+            dtw_distances[i][j] = dtw_distances[j][i] = dist
+    
 
 def main(arguments):
     elapsed_time_s = time()
@@ -29,15 +52,19 @@ def main(arguments):
                         dest="k",
                         default = '-1',
                         type = int,
-                        help="The number of nearest neighbors: default: 100 or 20 percent of the trainning, whichever is smaller")
+                        help="The number of nearest neighbors: [100 or 20 percent of the trainning, whichever is smaller]")
     parser.add_argument("-l", "--lsh_method",
                         dest="lsh_method",
                         default = 'psd',
-                        help="The lsh method used: psd (Euclidean)/rhp (Cosine)")
+                        help="The lsh method used: psd (Euclidean)/rhp (Cosine) [psd]")
     parser.add_argument("-f", "--feature",
                         dest="feature",
                         default = None,
-                        help="Feature based method: dtw (DTW distances)")
+                        help="Feature based method: dtw (DTW distances) [None]")
+    parser.add_argument("-s", "--svm_parms",
+                        dest="svm_parms",
+                        default = 't:0,q',
+                        help="Parameters used by LIBSVM (parm1:val1,parm2:val2) [t:0]")
     parser.add_argument("--prediction",
                         action = "store_false",
                         dest="isTesting",
@@ -49,7 +76,7 @@ def main(arguments):
     args = parser.parse_args(arguments)
     train_class_label = []
     train_dat = []
-    
+
     with open(args.database, 'rU') as f:
         for l in f:
             line = l.strip().split(',')
@@ -77,7 +104,10 @@ def main(arguments):
     os.makedirs(tmp_folder)
 
     sys.stderr.write(' '.join(['Using', tmp_folder , 'as temp folder ... \n']))
-
+    sys.stderr.write('Number of Nearest Neighbours (K): %d \n' %(k))
+    sys.stderr.write('LSH method: %s \n' %(args.lsh_method))
+    sys.stderr.write('SVM parameters: %s \n' %(args.svm_parms))
+    sys.stderr.write('Features used: %s \n' %(args.feature))
     tmp_index = tmp_folder + 'lsh.index'
 
     index_time_s = time()
@@ -94,16 +124,8 @@ def main(arguments):
     if args.feature == 'dtw': 
         ## use dtw distances as features
         ## precompute the distances
-        train_len = len(train_class_label)
-        dtw_distances = [[0 for x in xrange(train_len)] for x in xrange(train_len)]
-    
-        for i in xrange(train_len):
-            for j in xrange(i+1,train_len):
-                dist = dtw.dtw(train_dat[i], train_dat[j])
-                dtw_distances[i][j] = dtw_distances[j][i] = dist
+        dtw_distances = dtw_dist_mat(train_dat)
 
-    sys.stderr.write('Number of Nearest Neighbours (K): %d \n' %(k))
-    sys.stderr.write('LSH method: %s \n' %(args.lsh_method))
     index_time_e = time()
     accuracy  = 0
     with open(args.query, 'rU') as f:
@@ -123,7 +145,7 @@ def main(arguments):
 
             kNN_labels = [ train_class_label[i] for i in kNN_index]
 
-            sys.stderr.write("Processing test case %d\n" %(counter))
+            sys.stderr.write("\nProcessing test case %d\n" %(counter))
 
             ## if kNN are all of one class, just report that
             tmp_label = kNN_labels[0]
@@ -142,7 +164,7 @@ def main(arguments):
                     kNN_dat = [ train_dat[i] for i in kNN_index ]
                 
                 ## training
-                model = svm.svm_train(kNN_labels, kNN_dat, '-t 0  -q')
+                model = svm.svm_train(kNN_labels, kNN_dat, parse_svm_parms(args.svm_parms))
                 train_time_e = time()
                 total_train_time += train_time_e - train_time_s
                 ## testing
