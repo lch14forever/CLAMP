@@ -1,5 +1,9 @@
 CLAMP: Classification of time series using LAMP
 =============
+Authors:
+--------------
+Li Chenhao, Wang Xiyan, Xu Qian
+
 Description
 --------------
 CLAMP is a semi-lazy learning frame work designed for time series classification. Given a test data point, it firstly performs k-Nearest Neighbour (lazy learning), to find a subset of training data. The subset is then used for training a Support Vector Machine (eager learning) for the final classification.
