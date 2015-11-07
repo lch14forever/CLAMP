@@ -7,7 +7,7 @@
 import os
 import sys
 import argparse
-import libpylshbox
+import pylshbox
 import fastdtw
 from datetime import datetime
 from time import time
@@ -112,10 +112,10 @@ def main(arguments):
 
     index_time_s = time()
     if args.lsh_method == 'rhp':
-        mat = libpylshbox.rhplsh()
+        mat = pylshbox.rhplsh()
         mat.init_mat(train_dat, tmp_index, 521, 5, 6)
     elif args.lsh_method == 'psd':
-        mat = libpylshbox.psdlsh()
+        mat = pylshbox.psdlsh()
         mat.init_mat(train_dat, tmp_index, 521, 200, 2, 5)
     else:
         os.rmdir(tmp_folder)
