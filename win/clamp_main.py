@@ -30,11 +30,11 @@ def dtw_dist_mat(dat):
         sys.stderr.write('\r')
         sys.stderr.write("[%-50s] %d%%" % ('='*(50*(i+1)/length), (i+1)*100*1.0/length))
         sys.stderr.flush()
-        sys.stderr.write("\n")
         for j in xrange(i+1,length):
             dist = (fastdtw.fastdtw(dat[i], dat[j]))[0]
             dtw_distances[i][j] = dtw_distances[j][i] = dist
-    
+    sys.stderr.write("\n")
+    return dtw_distances
 
 def main(arguments):
     elapsed_time_s = time()
@@ -160,7 +160,7 @@ def main(arguments):
                     ## retrieve dtw feature matrix
                     kNN_dat = []
                     for i in kNN_index:
-                        kNN_dat.append([train_dat[i][x] for x in kNN_index])
+                        kNN_dat.append([dtw_distances[i][x] for x in kNN_index])
                 else:
                     kNN_dat = [ train_dat[i] for i in kNN_index ]
                 
