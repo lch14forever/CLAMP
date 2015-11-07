@@ -30,7 +30,7 @@ def dtw_dist_mat(dat):
         sys.stderr.write('\r')
         sys.stderr.write("[%-50s] %d%%" % ('='*(50*(i+1)/length), (i+1)*100*1.0/length))
         sys.stderr.flush()
-
+        sys.stderr.write("\n")
         for j in xrange(i+1,length):
             dist = (fastdtw.fastdtw(dat[i], dat[j]))[0]
             dtw_distances[i][j] = dtw_distances[j][i] = dist
@@ -139,13 +139,14 @@ def main(arguments):
                 test_dat = map(float, line[1:])
             else:
                 test_dat = map(float, line)
+                test_class_label = 1
                 
             result = mat.query(test_dat, 2, k)
             kNN_index = result[0]
 
             kNN_labels = [ train_class_label[i] for i in kNN_index]
 
-            sys.stderr.write("\nProcessing test case %d\n" %(counter))
+            sys.stderr.write("Processing test case %d\n" %(counter))
 
             ## if kNN are all of one class, just report that
             tmp_label = kNN_labels[0]
@@ -169,28 +170,35 @@ def main(arguments):
                 total_train_time += train_time_e - train_time_s
                 ## testing
                 test_time_s = time()
-                p_label, p_acc, p_val = svm.svm_predict([test_class_label], [test_dat], model)
+                p_label, p_acc, p_val = svm.svm_predict([test_class_label], [test_dat], model ,'-q')
                 test_time_e = time()
                 total_test_time += test_time_e - test_time_s
-            
-            if test_class_label == p_label[0]:
-                correct_prediction += 1
+            if args.isTesting:
+                if test_class_label == p_label[0]:
+                    correct_prediction += 1
+                    sys.stderr.write('Correct!\n')
+                else:
+                    sys.stderr.write('Wrong!\n')
+            else:
+                args.outfile.write("%d\n" %(p_label[0]))
 
         sys.stderr.write('=============================================================\n')
-        sys.stderr.write("Number of test cases: %d \n" %(counter))    
-        sys.stderr.write("Number of correct predictions: %d \n" %(correct_prediction))
-        accuracy = correct_prediction*1.0/counter
-        sys.stderr.write("Accuracy: %.2f \n" %(accuracy)) 
+
+        if args.isTesting:
+            sys.stderr.write("Number of test cases: %d \n" %(counter))
+            sys.stderr.write("Number of correct predictions: %d \n" %(correct_prediction))
+            accuracy = correct_prediction*1.0/counter
+            sys.stderr.write("Accuracy: %.2f \n" %(accuracy)) 
 
     elapsed_time_e = time()
     elapsed_time = elapsed_time_e - elapsed_time_s
     index_time = index_time_e - index_time_s
-    
-    args.outfile.write('Accuracy\t%f\n' %(accuracy))
-    args.outfile.write('Elapsed_Time\t%s\n' %(elapsed_time))
-    args.outfile.write('IndexTime\t%s\n' %(index_time))
-    args.outfile.write('TrainingTime\t%s\n' %(total_train_time))
-    args.outfile.write('TestingTime\t%s\n' %(total_test_time))    
+    if args.isTesting:
+        args.outfile.write('Accuracy\t%f\n' %(accuracy))
+        args.outfile.write('Elapsed_Time\t%s\n' %(elapsed_time))
+        args.outfile.write('IndexTime\t%s\n' %(index_time))
+        args.outfile.write('TrainingTime\t%s\n' %(total_train_time))
+        args.outfile.write('TestingTime\t%s\n' %(total_test_time))    
     
     os.remove(tmp_index)
     os.rmdir(tmp_folder)
