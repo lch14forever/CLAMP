@@ -22,6 +22,34 @@ def parse_svm_parms(parms):
         parm_parsed.extend(p)
     return ' '.join(parm_parsed)
 
+def parse_lsh_parms(parms):
+    parm_list = parms.split(',')
+    parm_parsed = {}
+    for i in parm_list:
+        p = i.split(':')
+        parm_parsed[p[0]] = p[1]
+    return parm_parsed
+
+
+def discreteHaarWaveletTransform(x):
+    ## from:
+    ##http://stackoverflow.com/questions/20243932/is-this-wavelet-transform-implementation-correct
+    N = len(x)
+    output = [0.0]*N
+    length = N >> 1
+    while True:
+        for i in xrange(0,length):
+            summ = x[i * 2] + x[i * 2 + 1]
+            difference = x[i * 2] - x[i * 2 + 1]
+            output[i] = summ
+            output[length + i] = difference
+
+        if length == 1:
+            return output
+        x = output[:length << 1]
+        length >>= 1
+
+
 def dtw_dist_mat(dat):
     length = len(dat)
     dtw_distances = [[0 for x in xrange(length)] for x in xrange(length)]
@@ -52,7 +80,7 @@ def main(arguments):
                         dest="k",
                         default = '-1',
                         type = int,
-                        help="The number of nearest neighbors: [100 or 20 percent of the trainning, whichever is smaller]")
+                        help="The number of nearest neighbors: [20 percent of the trainning, bounded by [10, 100]]")
     parser.add_argument("-l", "--lsh_method",
                         dest="lsh_method",
                         default = 'psd',
@@ -60,7 +88,11 @@ def main(arguments):
     parser.add_argument("-f", "--feature",
                         dest="feature",
                         default = None,
-                        help="Feature based method: dtw (DTW distances) [None]")
+                        help="Feature based method: dtw (DTW distances), dwt (Discrete Wavelet Transformation) [Raw data]")
+    parser.add_argument("-p", "--lsh_parms",
+                        dest="lsh_parms",
+                        default = 'M:521,L:20,T:2,W:5',
+                        help="Parameters used by LSHBOX (parm1:val1,parm2:val2) [M:521,L:20,T:2,W:5]")
     parser.add_argument("-s", "--svm_parms",
                         dest="svm_parms",
                         default = 't:0,q',
@@ -84,6 +116,7 @@ def main(arguments):
             train_dat.append(map(float,line[1:]))
     if args.k == -1:
         k = min( int(0.2*len(train_class_label)), 100 )
+        k = max(k, 10)
     else:
         k = args.k
 
@@ -97,26 +130,27 @@ def main(arguments):
         tmp_folder = '/dev/shm/lshbox_tmp'
     elif os.path.exists("/tmp"):
         tmp_folder = '/tmp/lshbox_tmp'
-    program_time = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-
-    tmp_folder += program_time + '/'
+    program_time = datetime.now().strftime('%m-%d_%H-%M-%S.%f')
+    tmp_folder += program_time +  '/'
     
     os.makedirs(tmp_folder)
 
     sys.stderr.write(' '.join(['Using', tmp_folder , 'as temp folder ... \n']))
     sys.stderr.write('Number of Nearest Neighbours (K): %d \n' %(k))
     sys.stderr.write('LSH method: %s \n' %(args.lsh_method))
+    sys.stderr.write('LSH parameters: %s \n' %(args.lsh_parms))
     sys.stderr.write('SVM parameters: %s \n' %(args.svm_parms))
     sys.stderr.write('Features used: %s \n' %(args.feature))
     tmp_index = tmp_folder + 'lsh.index'
-
+    
     index_time_s = time()
+    lsh_parms = parse_lsh_parms(args.lsh_parms)
     if args.lsh_method == 'rhp':
         mat = pylshbox.rhplsh()
-        mat.init_mat(train_dat, tmp_index, 521, 5, 6)
+        mat.init_mat(train_dat, tmp_index, int(lsh_parms['M']), int(lsh_parms['L']), int(lsh_parms['N']))
     elif args.lsh_method == 'psd':
         mat = pylshbox.psdlsh()
-        mat.init_mat(train_dat, tmp_index, 521, 200, 2, 5)
+        mat.init_mat(train_dat, tmp_index, int(lsh_parms['M']), int(lsh_parms['L']), int(lsh_parms['T']), float(lsh_parms['W']))
     else:
         os.rmdir(tmp_folder)
         sys.exit('Wrong LSH method! Use rhp or psd\n')
@@ -161,6 +195,8 @@ def main(arguments):
                     kNN_dat = []
                     for i in kNN_index:
                         kNN_dat.append([dtw_distances[i][x] for x in kNN_index])
+                elif args.feature == 'dwt':
+                    kNN_dat = [ discreteHaarWaveletTransform(train_dat[i]) for i in kNN_index]
                 else:
                     kNN_dat = [ train_dat[i] for i in kNN_index ]
                 
