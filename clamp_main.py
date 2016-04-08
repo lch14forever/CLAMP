@@ -199,8 +199,10 @@ def main(arguments):
     elapsed_time = elapsed_time_e - elapsed_time_s
     index_time = index_time_e - index_time_s
     if args.isTesting:
-        args.outfile.write('Accuracy\t%f\n' %(accuracy))
-        args.outfile.write('Elapsed_Time\t%s\n' %(elapsed_time))
+        args.outfile.write("Recall: %.2f \n" %(recall))      
+        args.outfile.write("Precision: %.2f \n" %(precision))
+        args.outfile.write("F1: %.2f \n" %(f1))              
+        args.outfile.write('Elapsed_Time\t%s\nw' %(elapsed_time))
         args.outfile.write('IndexTime\t%s\n' %(index_time))
         args.outfile.write('TrainingTime\t%s\n' %(total_train_time))
         args.outfile.write('TestingTime\t%s\n' %(total_test_time))    
