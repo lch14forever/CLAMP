@@ -31,51 +31,19 @@ def parse_lsh_parms(parms):
     return parm_parsed
 
 
-def discreteHaarWaveletTransform(x):
-    ## from:
-    ##http://stackoverflow.com/questions/20243932/is-this-wavelet-transform-implementation-correct
-    N = len(x)
-    output = [0.0]*N
-    length = N >> 1
-    while True:
-        for i in xrange(0,length):
-            summ = x[i * 2] + x[i * 2 + 1]
-            difference = x[i * 2] - x[i * 2 + 1]
-            output[i] = summ
-            output[length + i] = difference
-
-        if length == 1:
-            return output
-        x = output[:length << 1]
-        length >>= 1
-
-
-def dtw_dist_mat(dat):
-    length = len(dat)
-    dtw_distances = [[0 for x in xrange(length)] for x in xrange(length)]
-    sys.stderr.write('Precomputing DTW distance matrix [%dx%d] for training set...\n' %(length, length))
-    for i in xrange(length):
-        sys.stderr.write('\r')
-        sys.stderr.write("[%-50s] %d%%" % ('='*(50*(i+1)/length), (i+1)*100*1.0/length))
-        sys.stderr.flush()
-        for j in xrange(i+1,length):
-            dist = (fastdtw.fastdtw(dat[i], dat[j]))[0]
-            dtw_distances[i][j] = dtw_distances[j][i] = dist
-    sys.stderr.write("\n")
-    return dtw_distances
-
 def main(arguments):
     elapsed_time_s = time()
     parser = argparse.ArgumentParser(description=__doc__)
 
     parser.add_argument("-d", "--database",
                         required="True",
-                        dest="database",
-                        help="The database of training time series")
+                        nargs="+",
+                        metavar="database",
+                        help="The database of training data")
     parser.add_argument("-q", "--query",
                         required="True",
                         dest="query",
-                        help="The query time series")
+                        help="The query dataset")
     parser.add_argument("-k", "--num_nearest_neighbors",
                         dest="k",
                         default = '-1',
@@ -85,13 +53,9 @@ def main(arguments):
                         dest="lsh_method",
                         default = 'psd',
                         help="The lsh method used: psd (Euclidean)/rhp (Cosine) [psd]")
-    parser.add_argument("-f", "--feature",
-                        dest="feature",
-                        default = None,
-                        help="Feature based method: dtw (DTW distances), dwt (Discrete Wavelet Transformation) [Raw data]")
     parser.add_argument("-p", "--lsh_parms",
                         dest="lsh_parms",
-                        default = 'M:521,L:20,T:2,W:5',
+                        default = 'M:521,L:15,T:2,W:5',
                         help="Parameters used by LSHBOX (parm1:val1,parm2:val2) [M:521,L:20,T:2,W:5]")
     parser.add_argument("-s", "--svm_parms",
                         dest="svm_parms",
@@ -108,12 +72,13 @@ def main(arguments):
     args = parser.parse_args(arguments)
     train_class_label = []
     train_dat = []
-
-    with open(args.database, 'rU') as f:
-        for l in f:
-            line = l.strip().split(',')
-            train_class_label.append(int(line[0]))
-            train_dat.append(map(float,line[1:]))
+    
+    for d in args.database:
+        with open(d, 'rU') as f:
+            for l in f:
+                line = l.strip().split('\t')
+                train_class_label.append(int(line[0]))
+                train_dat.append(map(float,line[1:]))
     if args.k == -1:
         k = min( int(0.2*len(train_class_label)), 100 )
         k = max(k, 10)
@@ -140,7 +105,6 @@ def main(arguments):
     sys.stderr.write('LSH method: %s \n' %(args.lsh_method))
     sys.stderr.write('LSH parameters: %s \n' %(args.lsh_parms))
     sys.stderr.write('SVM parameters: %s \n' %(args.svm_parms))
-    sys.stderr.write('Features used: %s \n' %(args.feature))
     tmp_index = tmp_folder + 'lsh.index'
     
     index_time_s = time()
@@ -155,22 +119,22 @@ def main(arguments):
         os.rmdir(tmp_folder)
         sys.exit('Wrong LSH method! Use rhp or psd\n')
 
-    if args.feature == 'dtw': 
-        ## use dtw distances as features
-        ## precompute the distances
-        dtw_distances = dtw_dist_mat(train_dat)
 
     index_time_e = time()
     accuracy  = 0
     with open(args.query, 'rU') as f:
         counter = 0
-        correct_prediction = 0
+        T_counter = 0
+        TP_counter = 0
+        FP_counter = 0
         for l in f:
             counter += 1
-            line = l.strip().split(',')
+            line = l.strip().split('\t')
             if args.isTesting:
                 test_class_label = int(line[0])
                 test_dat = map(float, line[1:])
+                if test_class_label == 1:
+                    T_counter += 1
             else:
                 test_dat = map(float, line)
                 test_class_label = 1
@@ -190,15 +154,7 @@ def main(arguments):
             ## else run the eager learning part
             else:
                 train_time_s = time()
-                if args.feature == 'dtw':
-                    ## retrieve dtw feature matrix
-                    kNN_dat = []
-                    for i in kNN_index:
-                        kNN_dat.append([dtw_distances[i][x] for x in kNN_index])
-                elif args.feature == 'dwt':
-                    kNN_dat = [ discreteHaarWaveletTransform(train_dat[i]) for i in kNN_index]
-                else:
-                    kNN_dat = [ train_dat[i] for i in kNN_index ]
+                kNN_dat = [ train_dat[i] for i in kNN_index ]
                 
                 ## training
                 model = svm.svm_train(kNN_labels, kNN_dat, parse_svm_parms(args.svm_parms))
@@ -210,11 +166,21 @@ def main(arguments):
                 test_time_e = time()
                 total_test_time += test_time_e - test_time_s
             if args.isTesting:
-                if test_class_label == p_label[0]:
-                    correct_prediction += 1
+                if test_class_label == 1 and p_label[0] == 1:
+                    ## TP
+                    TP_counter += 1
                     sys.stderr.write('Correct!\n')
-                else:
+                elif test_class_label == 0 and p_label[0] == 1:
+                    ## FP
+                    FP_counter += 1
                     sys.stderr.write('Wrong!\n')
+                elif test_class_label == 1 and p_label[0] == 0:
+                    ## FN
+                    sys.stderr.write('Wrong!\n')
+                else:
+                    ## TN
+                    sys.stderr.write('Correct!\n')
+                    
             else:
                 args.outfile.write("%d\n" %(p_label[0]))
 
@@ -222,9 +188,12 @@ def main(arguments):
 
         if args.isTesting:
             sys.stderr.write("Number of test cases: %d \n" %(counter))
-            sys.stderr.write("Number of correct predictions: %d \n" %(correct_prediction))
-            accuracy = correct_prediction*1.0/counter
-            sys.stderr.write("Accuracy: %.2f \n" %(accuracy)) 
+            recall = TP_counter*1.0/T_counter
+            precision = TP_counter*1.0/(TP_counter+FP_counter)
+            f1 = 2*recall*precision/(precision+recall)
+            sys.stderr.write("Recall: %.2f \n" %(recall)) 
+            sys.stderr.write("Precision: %.2f \n" %(precision)) 
+            sys.stderr.write("F1: %.2f \n" %(f1)) 
 
     elapsed_time_e = time()
     elapsed_time = elapsed_time_e - elapsed_time_s
